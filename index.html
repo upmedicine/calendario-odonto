@@ -130,11 +130,11 @@
 
   let topics;
   try {
-    const res = await fetch('temas-odonto.json', {cache:'no-store'});
-    if(!res.ok) throw new Error('No se pudo cargar temas-odonto.json');
+    const res = await fetch('study-topics.json', {cache:'no-store'});
+    if(!res.ok) throw new Error('No se pudo cargar study-topics.json');
     topics = await res.json();
   } catch(err){
-    showMessage('Error al cargar temas-odonto.json. Asegúrate de colocarlo junto a este archivo.');
+    showMessage('Error al cargar study-topics.json. Asegúrate de colocarlo junto a este archivo.');
     console.error(err);
     return;
   }
@@ -149,15 +149,20 @@
     topics = topics.filter((_,i)=> !idxs.slice(-4).includes(i)).concat(idxs.slice(-4).map(i=> ({...topics[i]})));
   }
 
-  //const simDays = topics.slice(-4);
-  const otherTopics = topics;
+  const simDays = topics.slice(-4);
+  const otherTopics = topics.slice(0, -4);
 
-  // Distribute otherTopics across (totalDays - 4) days ensuring NO empty study days
-  //const studyDays = totalDays - 4;
-  const studyDays = totalDays;
+  // Distribute otherTopics across (totalDays - 4) days, inserting "Descanso" days if there are
+  // more days than topics. Always start with a study topic when possible.
+  const studyDays = totalDays - 4;
   const R = otherTopics.length;
 
   const schedule = [];
+
+  function descansoItem(){
+    return { topic: 'Descanso / Simulador / Repaso', 'thematic-area': 'Libre' };
+  }
+
   if (studyDays > 0) {
     if (R >= studyDays) {
       // enough topics: classic even chunking
@@ -171,18 +176,30 @@
         schedule.push(chunk);
       }
     } else if (R > 0) {
-      // not enough topics: cycle topics so every day has at least one (no free days)
-      for (let i = 0; i < studyDays; i++) {
-        schedule.push([ otherTopics[i % R] ]);
+      // Not enough topics: place one study topic per study day and distribute "Descanso" days
+      // evenly across the entire period using cumulative rounding.
+      // Always start with a study topic.
+      const rests = studyDays - R;
+      for (let i = 0; i < R; i++) {
+        // Study day
+        schedule.push([ otherTopics[i] ]);
+        // Evenly spread rests after each study day using cumulative rounding:
+        // add = floor((i+1)*rests/R) - floor(i*rests/R)
+        const add = Math.floor(((i + 1) * rests) / R) - Math.floor((i * rests) / R);
+        for (let r = 0; r < add; r++) {
+          schedule.push([ descansoItem() ]);
+        }
       }
+      // schedule length is guaranteed to be studyDays (R study + rests)
     } else {
-      // no other topics available (only simulator ones exist)
-      for (let i = 0; i < studyDays; i++) schedule.push([]);
-      showMessage('No hay suficientes temas (excluyendo Simulador) para cubrir los días previos.');
+      // No other topics (only simulator ones exist) -> fill with rest days, warn the user.
+      for (let i = 0; i < studyDays; i++) schedule.push([ descansoItem() ]);
+      showMessage('No hay temas (excluyendo Simulador) para los días previos. Se agregaron días de Descanso.');
     }
   }
   // Append the four single-topic days at the very end
-  //for (const s of simDays) { schedule.push([s]); }
+  for (const s of simDays) { schedule.push([s]); }
+  for (const s of simDays) { schedule.push([s]); }
 
   // Build date range
   const days = [];
@@ -192,7 +209,7 @@
   }
 
   // Map thematic-area => color (distinct + accessible)
-  const uniqueAreas = Array.from(new Set(topics.map(t=>t['thematic-area'])));
+  const uniqueAreas = Array.from(new Set([...topics.map(t=>t['thematic-area']), 'Libre']));
   // Pallete with good contrast and distinct material colors
   const palette = [
     '#EF476F', '#FFD166', '#06D6A0', '#118AB2', '#073B4C',
@@ -284,7 +301,7 @@
           chip.style.borderColor = '#0002';
 
           const topic = document.createElement('div'); topic.className='topic'; topic.textContent = item.topic;
-          const area = document.createElement('div'); area.className='area'; area.textContent = item['thematic-area'];
+          //const area = document.createElement('div'); area.className='area'; area.textContent = item['thematic-area'];
           //chip.append(topic, area);
           chip.append(topic);
           labels.appendChild(chip);
